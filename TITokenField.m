@@ -13,6 +13,9 @@
 #pragma mark - TITokenFieldView -
 //==========================================================
 
+NSString * const kTextEmpty = @"\u200B"; // Zero-Width Space
+NSString * const kTextHidden = @"\u200D"; // Zero-Width Joiner
+
 @interface TITokenFieldView (Private)
 - (void)setup;
 - (NSString *)displayStringForRepresentedObject:(id)object;
@@ -231,7 +234,12 @@
 }
 
 - (void)tokenFieldTextDidChange:(TITokenField *)field {
-	[self resultsForSearchString:field.text];
+	NSString *text = [field text];
+
+	text = [text stringByReplacingOccurrencesOfString:kTextEmpty withString:@""];
+	text = [text stringByReplacingOccurrencesOfString:kTextHidden withString:@""];
+
+	[self resultsForSearchString:text];
 }
 
 - (void)tokenFieldFrameWillChange:(TITokenField *)field {
@@ -292,50 +300,72 @@
 	}
 }
 
-- (void)resultsForSearchString:(NSString *)searchString {
-	
+- (void)resultsForSearchString:(NSString *)searchString
+{
 	// The brute force searching method.
 	// Takes the input string and compares it against everything in the source array.
 	// If the source is massive, this could take some time.
 	// You could always subclass and override this if needed or do it on a background thread.
 	// GCD would be great for that.
-	
+
 	[resultsArray removeAllObjects];
 	[resultsTable reloadData];
-	
-	searchString = [searchString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-	
-	if (searchString.length){
-		[sourceArray enumerateObjectsUsingBlock:^(id sourceObject, NSUInteger idx, BOOL *stop){
-			
-			NSString * query = [self searchResultStringForRepresentedObject:sourceObject];
-			NSString * querySubtitle = [self searchResultSubtitleForRepresentedObject:sourceObject];
-			if (!querySubtitle) querySubtitle = @"";
-			
-			if ([query rangeOfString:searchString options:NSCaseInsensitiveSearch].location != NSNotFound ||
-				[querySubtitle rangeOfString:searchString options:NSCaseInsensitiveSearch].location != NSNotFound){
-				
-				__block BOOL shouldAdd = ![resultsArray containsObject:sourceObject];
-				if (shouldAdd && !showAlreadyTokenized){
-					
-					[tokenField.tokens enumerateObjectsUsingBlock:^(TIToken * token, NSUInteger idx, BOOL *secondStop){
-						if ([token.representedObject isEqual:sourceObject]){
-							shouldAdd = NO;
-							*secondStop = YES;
-						}
-					}];
+
+	id delegate = [tokenField delegate];
+
+	if ([delegate respondsToSelector:@selector(tokenField:resultsForSearchString:)]) {
+		NSArray *results = [delegate tokenField:tokenField resultsForSearchString:searchString];
+
+		if (nil == results) {
+			results = [NSArray array];
+		}
+
+		sourceArray = [results copy];
+		[resultsArray addObjectsFromArray:results];
+	}
+	else {
+		searchString = [searchString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+		if (searchString.length){
+			[sourceArray enumerateObjectsUsingBlock:^(id sourceObject, NSUInteger idx, BOOL *stop){
+
+				NSString * query = [self searchResultStringForRepresentedObject:sourceObject];
+				NSString * querySubtitle = [self searchResultSubtitleForRepresentedObject:sourceObject];
+				if (!querySubtitle) querySubtitle = @"";
+
+				if ([query rangeOfString:searchString options:NSCaseInsensitiveSearch].location != NSNotFound ||
+					[querySubtitle rangeOfString:searchString options:NSCaseInsensitiveSearch].location != NSNotFound){
+
+					__block BOOL shouldAdd = ![resultsArray containsObject:sourceObject];
+					if (shouldAdd && !showAlreadyTokenized){
+
+						[tokenField.tokens enumerateObjectsUsingBlock:^(TIToken * token, NSUInteger index, BOOL *secondStop){
+							if ([token.representedObject isEqual:sourceObject]){
+								shouldAdd = NO;
+								*secondStop = YES;
+							}
+						}];
+					}
+
+					if (shouldAdd) [resultsArray addObject:sourceObject];
 				}
-				
-				if (shouldAdd) [resultsArray addObject:sourceObject];
-			}
-		}];
-		
+			}];
+		}
+	}
+
+	if (resultsArray.count > 0) {
 		[resultsArray sortUsingComparator:^NSComparisonResult(id obj1, id obj2) {
 			return [[self searchResultStringForRepresentedObject:obj1] localizedCaseInsensitiveCompare:[self searchResultStringForRepresentedObject:obj2]];
 		}];
 		[resultsTable reloadData];
+
+		[self setSearchResultsVisible:YES];
 	}
-	[self setSearchResultsVisible:(resultsArray.count > 0)];
+	else {
+		[self setSearchResultsVisible:NO];
+	}
+
+	return;
 }
 
 - (void)presentpopoverAtTokenFieldCaretAnimated:(BOOL)animated {
@@ -364,8 +394,6 @@
 //==========================================================
 #pragma mark - TITokenField -
 //==========================================================
-NSString * const kTextEmpty = @"\u200B"; // Zero-Width Space
-NSString * const kTextHidden = @"\u200D"; // Zero-Width Joiner
 
 @interface TITokenFieldInternalDelegate ()
 @property (nonatomic, assign) id <UITextFieldDelegate> delegate;
