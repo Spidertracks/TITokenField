@@ -709,6 +709,19 @@ NSString * const kTextHidden = @"\u200D"; // Zero-Width Joiner
 	return tokenCaret.y + lineHeight;
 }
 
+#pragma mark - 
+
+- (void)setVisible:(BOOL)visible animated:(BOOL)animated
+{
+	_visible = visible;
+	[self layoutTokensAnimated:animated];
+}
+
+- (void)setVisible:(BOOL)visible
+{
+	[self setVisible:visible animated:YES];
+}
+
 #pragma mark View Handlers
 - (void)layoutTokensAnimated:(BOOL)animated {
 	
